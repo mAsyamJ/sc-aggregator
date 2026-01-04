@@ -10,28 +10,52 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title RebalanceManager
- * @notice Rebalance decisions + execution.
- * @dev No storage declarations; reads/writes VaultStorage via inheritance.
+ * @notice Rebalance decisions + execution (oracle-driven).
+ * @dev No storage declarations; reads/writes through VaultStorage/StrategyRegistry.
  */
 abstract contract RebalanceManager is StrategyRegistry {
     using SafeERC20 for IERC20;
 
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event RebalanceThresholdUpdated(uint256 thresholdBps);
     event MinRebalanceIntervalUpdated(uint256 interval);
     event AutoRebalanceToggled(bool enabled);
-    event RebalanceInitiated(address[] strategies, uint256[] targetAllocationsBps, uint256 improvementBps);
+
+    event RebalanceInitiated(
+        address[] targetStrategies,
+        uint256[] targetAllocBps,
+        uint256 improvementBps
+    );
     event RebalanceExecuted(address indexed executor);
 
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error NotAuthorized();
     error RebalanceTooSoon();
     error OracleUnavailable();
-    error NoStrategies();
-    error NotAuthorized();
+    error NoValidCandidates();
     error InvalidAllocation();
+    error QuoteStale(address strategy);
+    error QuoteRoundInvalid(address strategy);
 
     modifier onlyGovOrMgmt() {
         if (msg.sender != governance && msg.sender != management) revert NotAuthorized();
         _;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        OPTIONAL STABILITY KNOBS
+    //////////////////////////////////////////////////////////////*/
+    // These are logic-only params; stored in VaultStorage if you want later.
+    // For now hard-coded defaults to avoid more storage churn.
+    function _minAllocBps() internal pure virtual returns (uint256) { return 50; }     // 0.5%
+    function _maxAllocBps() internal pure virtual returns (uint256) { return 3000; }  // 30%
+    function _power() internal pure virtual returns (uint8) { return 2; }             // score^2 dampens churn
 
     /*//////////////////////////////////////////////////////////////
                             CONFIG
@@ -71,19 +95,16 @@ abstract contract RebalanceManager is StrategyRegistry {
         if (block.timestamp < lastRebalance + minRebalanceInterval) return (false, 0);
         if (yieldOracle == address(0)) return (false, 0);
 
-        uint256 currentYieldWad = _calculatePortfolioYieldWad();
-        if (currentYieldWad == 0) {
-            // if no debt deployed, rebalancing doesn't matter
-            return (false, 0);
-        }
+        uint256 currentYieldWad = _portfolioYieldWad();
+        if (currentYieldWad == 0) return (false, 0);
 
-        (address[] memory targets, uint256[] memory allocBps) = _calculateOptimalAllocation();
+        (address[] memory targets, uint256[] memory allocBps) = _optimalAllocationFromOracle();
         if (targets.length == 0) return (false, 0);
 
-        uint256 optimalYieldWad = _calculateTargetYieldWad(targets, allocBps);
-
+        uint256 optimalYieldWad = _targetYieldWad(targets, allocBps);
         if (optimalYieldWad <= currentYieldWad) return (false, 0);
 
+        // improvement = (optimal - current) / current, in bps
         uint256 improvementWad = ((optimalYieldWad - currentYieldWad) * Config.DEGRADATION_COEFFICIENT) / currentYieldWad;
         improvementBps = (improvementWad * Config.MAX_BPS) / Config.DEGRADATION_COEFFICIENT;
 
@@ -102,10 +123,10 @@ abstract contract RebalanceManager is StrategyRegistry {
     function _executeRebalance() internal returns (bool) {
         if (block.timestamp < lastRebalance + minRebalanceInterval) revert RebalanceTooSoon();
 
-        (address[] memory targets, uint256[] memory allocBps) = _calculateOptimalAllocation();
-        if (targets.length == 0) revert NoStrategies();
+        (address[] memory targets, uint256[] memory allocBps) = _optimalAllocationFromOracle();
+        if (targets.length == 0) revert NoValidCandidates();
 
-        // sanity: sum alloc <= MAX_BPS
+        // basic sum check
         uint256 sum;
         for (uint256 i; i < allocBps.length; ++i) sum += allocBps[i];
         if (sum > Config.MAX_BPS) revert InvalidAllocation();
@@ -115,9 +136,9 @@ abstract contract RebalanceManager is StrategyRegistry {
 
         emit RebalanceInitiated(targets, allocBps, improvementBps);
 
-        // 1) withdraw from non-target strategies completely (simple policy)
-        uint256 len = _withdrawalQueue.length;
-        for (uint256 i; i < len; ++i) {
+        // Policy v1: withdraw from strategies not in target set entirely
+        uint256 qlen = _withdrawalQueue.length;
+        for (uint256 i; i < qlen; ++i) {
             address strat = _withdrawalQueue[i];
             StrategyParams storage s = _strategies[strat];
             if (s.activation == 0 || s.totalDebt == 0) continue;
@@ -133,12 +154,12 @@ abstract contract RebalanceManager is StrategyRegistry {
 
                 uint256 repaid = debt;
                 if (loss > repaid) loss = repaid;
-                repaid = repaid - loss;
+                repaid -= loss;
 
                 if (repaid > 0) _decreaseStrategyDebt(strat, repaid);
                 if (loss > 0) _reportLoss(strat, loss);
 
-                // set ratio to 0 (revoked-like)
+                // remove ratio allocation
                 if (s.debtRatio != 0) {
                     totalDebtRatio -= s.debtRatio;
                     s.debtRatio = 0;
@@ -146,15 +167,14 @@ abstract contract RebalanceManager is StrategyRegistry {
             }
         }
 
-        // 2) allocate/withdraw to match target debts
-        uint256 totalAssets_ = _totalAssets();
-
+        // Allocate toward targets
         IERC20 u = IERC20(asset());
+        uint256 totalAssets_ = _totalAssets();
 
         for (uint256 i; i < targets.length; ++i) {
             address strat = targets[i];
             StrategyParams storage s = _strategies[strat];
-            if (s.activation == 0) continue; // oracle can suggest unknown; ignore
+            if (s.activation == 0) continue; // oracle may suggest unknown; ignore
 
             uint256 targetDebt = (totalAssets_ * allocBps[i]) / Config.MAX_BPS;
             uint256 currentDebt = s.totalDebt;
@@ -175,17 +195,16 @@ abstract contract RebalanceManager is StrategyRegistry {
 
                     uint256 repaid = toWithdraw;
                     if (loss > repaid) loss = repaid;
-                    repaid = repaid - loss;
+                    repaid -= loss;
 
                     if (repaid > 0) _decreaseStrategyDebt(strat, repaid);
                     if (loss > 0) _reportLoss(strat, loss);
                 }
             }
 
-            // set strategy debt ratio to target allocation (policy choice)
+            // set strategy ratio to target (policy choice)
             uint256 old = s.debtRatio;
             if (allocBps[i] != old) {
-                // update totals safely
                 if (totalDebtRatio >= old) totalDebtRatio -= old;
                 totalDebtRatio += allocBps[i];
                 s.debtRatio = allocBps[i];
@@ -198,77 +217,139 @@ abstract contract RebalanceManager is StrategyRegistry {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        ORACLE -> TARGETS
+                    ORACLE -> TARGET STRATEGIES + ALLOCS
     //////////////////////////////////////////////////////////////*/
 
-    function calculateOptimalAllocation() external view returns (address[] memory, uint256[] memory) {
-        return _calculateOptimalAllocation();
+    function calculateOptimalAllocation()
+        external
+        view
+        returns (address[] memory strategies, uint256[] memory allocBps)
+    {
+        return _optimalAllocationFromOracle();
     }
 
-    function _calculateOptimalAllocation() internal view returns (address[] memory, uint256[] memory) {
-        if (yieldOracle == address(0)) revert OracleUnavailable();
+    function _optimalAllocationFromOracle()
+        internal
+        view
+        returns (address[] memory strategies, uint256[] memory allocBps)
+    {
+        address oracle = yieldOracle;
+        if (oracle == address(0)) revert OracleUnavailable();
 
-        // NOTE: use your oracle interface; if you adopt my IYieldOracle earlier, change call accordingly.
-        // For now we keep your buggy expectation:
-        // getAvailableProtocols(asset) -> (strategies, apys, risks)
-        (address[] memory allS, uint256[] memory apy, uint256[] memory risk) =
-            IYieldOracle(yieldOracle).getAvailableProtocols(asset());
+        (address[] memory candidates, IYieldOracle.YieldQuote[] memory quotes) =
+            IYieldOracle(oracle).getCandidates(asset());
 
-        if (allS.length == 0) return (new address, new uint256);
+        if (candidates.length == 0) return (new address, new uint256);
 
-        // filter only registered strategies
-        address[] memory tmp = new address[](allS.length);
-        uint256[] memory tmpA = new uint256[](allS.length);
-        uint256[] memory tmpR = new uint256[](allS.length);
+        uint256 maxAge = IYieldOracle(oracle).maxQuoteAge(asset());
+
+        // filter only registered + fresh + valid rounds
+        address[] memory tmpS = new address[](candidates.length);
+        uint256[] memory tmpScore = new uint256[](candidates.length);
         uint256 k;
-
-        for (uint256 i; i < allS.length; ++i) {
-            if (_strategies[allS[i]].activation != 0) {
-                tmp[k] = allS[i];
-                tmpA[k] = apy[i];
-                tmpR[k] = risk[i];
-                k++;
-            }
-        }
-
-        if (k == 0) return (new address, new uint256);
-
-        // scoring: score = apy / risk (risk defaults)
-        uint256[] memory scores = new uint256[](k);
         uint256 totalScore;
+
+        for (uint256 i; i < candidates.length; ++i) {
+            address strat = candidates[i];
+
+            // must be registered/allowed
+            if (_strategies[strat].activation == 0) continue;
+
+            IYieldOracle.YieldQuote memory q = quotes[i];
+
+            // chainlink-like sanity
+            if (q.answeredInRound < q.roundId) revert QuoteRoundInvalid(strat);
+
+            // staleness
+            if (q.updatedAt == 0 || block.timestamp > q.updatedAt + maxAge) revert QuoteStale(strat);
+
+            uint256 risk = q.riskScore;
+            if (risk == 0) risk = Config.DEFAULT_RISK_SCORE;
+            if (risk < Config.MIN_RISK_SCORE) risk = Config.MIN_RISK_SCORE;
+            if (risk > Config.MAX_RISK_SCORE) risk = Config.MAX_RISK_SCORE;
+
+            uint256 conf = q.confidenceBps;
+            if (conf > Config.MAX_BPS) conf = Config.MAX_BPS;
+
+            // score = apyWad * confidence / risk
+            uint256 score = (q.apyWad * conf) / risk;
+
+            // power curve to reduce allocation churn
+            uint8 p = _power();
+            if (p > 1) score = _pow(score, p);
+
+            tmpS[k] = strat;
+            tmpScore[k] = score;
+            totalScore += score;
+            k++;
+        }
+
+        if (k == 0 || totalScore == 0) return (new address, new uint256);
+
+        // normalize to bps
+        strategies = new address[](k);
+        allocBps = new uint256[](k);
+
         for (uint256 i; i < k; ++i) {
-            uint256 r = tmpR[i] == 0 ? Config.DEFAULT_RISK_SCORE : tmpR[i];
-            uint256 s = (tmpA[i] * Config.DEGRADATION_COEFFICIENT) / r;
-            scores[i] = s;
-            totalScore += s;
+            strategies[i] = tmpS[i];
+            allocBps[i] = (tmpScore[i] * Config.MAX_BPS) / totalScore;
         }
 
-        uint256[] memory alloc = new uint256[](k);
-        if (totalScore > 0) {
-            for (uint256 i; i < k; ++i) {
-                alloc[i] = (scores[i] * Config.MAX_BPS) / totalScore;
-            }
+        // apply max cap then renormalize
+        uint256 maxAlloc = _maxAllocBps();
+        if (maxAlloc != 0 && maxAlloc < Config.MAX_BPS) {
+            _capAndRenormalize(allocBps, maxAlloc);
         }
 
-        // pack
-        address[] memory outS = new address[](k);
-        uint256[] memory outB = new uint256[](k);
-        for (uint256 i; i < k; ++i) {
-            outS[i] = tmp[i];
-            outB[i] = alloc[i];
+        // zero dust then renormalize
+        uint256 minAlloc = _minAllocBps();
+        if (minAlloc != 0) {
+            _zeroDustAndRenormalize(allocBps, minAlloc);
         }
 
-        return (outS, outB);
+        // final sum check (<= MAX_BPS guaranteed, may be < due to rounding)
+        return (strategies, allocBps);
+    }
+
+    function _pow(uint256 x, uint8 p) private pure returns (uint256 y) {
+        y = x;
+        for (uint8 i = 1; i < p; ++i) {
+            y = y * x;
+        }
+    }
+
+    function _capAndRenormalize(uint256[] memory a, uint256 cap) private pure {
+        uint256 sum;
+        for (uint256 i; i < a.length; ++i) {
+            if (a[i] > cap) a[i] = cap;
+            sum += a[i];
+        }
+        if (sum == 0) return;
+        for (uint256 i; i < a.length; ++i) {
+            a[i] = (a[i] * Config.MAX_BPS) / sum;
+        }
+    }
+
+    function _zeroDustAndRenormalize(uint256[] memory a, uint256 minBps) private pure {
+        uint256 sum;
+        for (uint256 i; i < a.length; ++i) {
+            if (a[i] < minBps) a[i] = 0;
+            sum += a[i];
+        }
+        if (sum == 0) return;
+        for (uint256 i; i < a.length; ++i) {
+            a[i] = (a[i] * Config.MAX_BPS) / sum;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
-                            YIELD MATH
+                            YIELD CALCS
     //////////////////////////////////////////////////////////////*/
 
-    function _calculatePortfolioYieldWad() internal view returns (uint256) {
+    function _portfolioYieldWad() internal view returns (uint256) {
         uint256 len = _withdrawalQueue.length;
         uint256 debtSum;
-        uint256 weighted; // in underlying units
+        uint256 weighted; // underlying units
 
         for (uint256 i; i < len; ++i) {
             address strat = _withdrawalQueue[i];
@@ -286,9 +367,10 @@ abstract contract RebalanceManager is StrategyRegistry {
         return (weighted * Config.DEGRADATION_COEFFICIENT) / debtSum;
     }
 
-    function _calculateTargetYieldWad(address[] memory targets, uint256[] memory allocBps) internal view returns (uint256) {
+    function _targetYieldWad(address[] memory targets, uint256[] memory allocBps) internal view returns (uint256) {
         uint256 total;
         for (uint256 i; i < targets.length; ++i) {
+            // NOTE: You can also read oracle apy here, but cache is cheaper.
             uint256 apyWad = strategyAPYs[targets[i]];
             total += allocBps[i] * apyWad;
         }
