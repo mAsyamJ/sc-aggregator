@@ -117,8 +117,8 @@ library DebtMath {
             uint256 risk = _clampRisk(riskScores[i]);
 
             uint256 conf = (confidenceBps.length == 0)
-                ? Constants.MAX_BPS
-                : Math.min(confidenceBps[i], Constants.MAX_BPS);
+                ? Config.MAX_BPS
+                : Math.min(confidenceBps[i], Config.MAX_BPS);
 
             // score in WAD-ish units: apyWad * conf / (risk * MAX_BPS)
             // keep precision: (apyWad * conf) / risk
@@ -140,7 +140,7 @@ library DebtMath {
 
         // 2) normalize to BPS
         for (uint256 i = 0; i < n; ++i) {
-            allocBps[i] = (scores[i] * Constants.MAX_BPS) / totalScore;
+            allocBps[i] = (scores[i] * Config.MAX_BPS) / totalScore;
         }
 
         // 3) apply optional caps (max cap then min threshold)
@@ -169,11 +169,11 @@ library DebtMath {
         uint256 weighted = 0;
         for (uint256 i = 0; i < debts.length; ++i) {
             // (debt * apyWad) / 1e18 keeps in underlying units
-            weighted += (debts[i] * apyWad[i]) / Constants.WAD;
+            weighted += (debts[i] * apyWad[i]) / Config.WAD;
         }
 
         // convert back to WAD yield
-        return (weighted * Constants.WAD) / totalDebt_;
+        return (weighted * Config.WAD) / totalDebt_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -181,9 +181,9 @@ library DebtMath {
     //////////////////////////////////////////////////////////////*/
 
     function _clampRisk(uint256 r) private pure returns (uint256) {
-        if (r == 0) return Constants.DEFAULT_RISK_SCORE;
-        if (r < Constants.MIN_RISK_SCORE) return Constants.MIN_RISK_SCORE;
-        if (r > Constants.MAX_RISK_SCORE) return Constants.MAX_RISK_SCORE;
+        if (r == 0) return Config.DEFAULT_RISK_SCORE;
+        if (r < Config.MIN_RISK_SCORE) return Config.MIN_RISK_SCORE;
+        if (r > Config.MAX_RISK_SCORE) return Config.MAX_RISK_SCORE;
         return r;
     }
 
@@ -201,7 +201,7 @@ library DebtMath {
         pure
         returns (uint256[] memory)
     {
-        if (maxBps >= Constants.MAX_BPS) return alloc;
+        if (maxBps >= Config.MAX_BPS) return alloc;
 
         uint256 n = alloc.length;
         uint256 cappedSum = 0;
@@ -214,7 +214,7 @@ library DebtMath {
 
         // Renormalize to MAX_BPS (simple proportional scaling)
         for (uint256 i = 0; i < n; ++i) {
-            alloc[i] = (alloc[i] * Constants.MAX_BPS) / cappedSum;
+            alloc[i] = (alloc[i] * Config.MAX_BPS) / cappedSum;
         }
         return alloc;
     }
@@ -235,7 +235,7 @@ library DebtMath {
         if (sum == 0) return alloc;
 
         for (uint256 i = 0; i < n; ++i) {
-            alloc[i] = (alloc[i] * Constants.MAX_BPS) / sum;
+            alloc[i] = (alloc[i] * Config.MAX_BPS) / sum;
         }
 
         return alloc;

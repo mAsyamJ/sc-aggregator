@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
 pragma solidity ^0.8.20;
 
-import {Constants} from "../config/Constants.sol";
+import {Config} from "../config/Constants.sol";
 import {Math as OZMath} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
@@ -16,7 +16,7 @@ library Math {
 
     function bps(uint256 value, uint256 bps_) internal pure returns (uint256) {
         // value * bps / 10_000 (overflow-safe)
-        return OZMath.mulDiv(value, bps_, Constants.MAX_BPS);
+        return OZMath.mulDiv(value, bps_, Config.MAX_BPS);
     }
 
     function bpsAdd(uint256 value, uint256 bps_) internal pure returns (uint256) {
@@ -38,11 +38,11 @@ library Math {
     //////////////////////////////////////////////////////////////*/
 
     function wadMul(uint256 a, uint256 b) internal pure returns (uint256) {
-        return OZMath.mulDiv(a, b, Constants.WAD);
+        return OZMath.mulDiv(a, b, Config.WAD);
     }
 
     function wadDiv(uint256 a, uint256 b) internal pure returns (uint256) {
-        return OZMath.mulDiv(a, Constants.WAD, b);
+        return OZMath.mulDiv(a, Config.WAD, b);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -99,9 +99,9 @@ library Math {
 
         // decay = timeElapsed * degradation (WAD). cap at 1e18.
         uint256 decay = timeElapsed * lockedProfitDegradation;
-        if (decay >= Constants.WAD) return 0;
+        if (decay >= Config.WAD) return 0;
 
         // lockedProfit * (1 - decay)
-        return lockedProfit - OZMath.mulDiv(lockedProfit, decay, Constants.WAD);
+        return lockedProfit - OZMath.mulDiv(lockedProfit, decay, Config.WAD);
     }
 }
