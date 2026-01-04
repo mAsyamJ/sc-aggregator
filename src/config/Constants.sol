@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title Constants OF CONFIG
+ * @title Config
  * @notice Global constants used across all contracts.
  * @dev ONLY constants, no storage, no logic.
  */
@@ -14,6 +14,12 @@ library Config {
 
     // ========== FIXED-POINT ==========
     uint256 internal constant WAD = 1e18;
+
+    // Used in older modules; keep for compatibility (same as WAD)
+    uint256 internal constant DEGRADATION_COEFFICIENT = 1e18;
+
+    // Common convenience
+    uint256 internal constant MAX_UINT256 = type(uint256).max;
 
     // ========== FEE LIMITS ==========
     uint256 internal constant MAX_PERFORMANCE_FEE = 5_000; // 50%

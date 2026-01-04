@@ -8,25 +8,20 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
+import {Math as OZMath} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {Config} from "../config/Constants.sol";
-import {Math} from "../libraries/Math.sol";
+import {Math as VaultMath} from "../libraries/Math.sol";
 
 import {VaultStorage} from "./VaultStorage.sol";
 import {StrategyRegistry} from "./StrategyRegistry.sol";
 import {WithdrawManager} from "./WithdrawManager.sol";
 import {RebalanceManager} from "./RebalanceManager.sol";
 import {EmergencyManager} from "./EmergencyManager.sol";
-import {IStrategy} from "../interfaces/IStrategy.sol";
 
-/**
- * @title BaseVaultUpgradeable
- * @notice ERC4626 vault with modular managers + UUPS upgrades.
- * @dev ERC20/ERC4626 share storage is in OZ. VaultStorage holds protocol state only.
- */
 contract BaseVaultUpgradeable is
     Initializable,
     ERC20Upgradeable,
@@ -40,7 +35,6 @@ contract BaseVaultUpgradeable is
     EmergencyManager
 {
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -59,27 +53,27 @@ contract BaseVaultUpgradeable is
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error NotGov();
-    error NotAuthorized();
-    error ZeroAddress();
-    error ZeroAmount();
-    error EmergencyShutdownActive();
-    error DepositLimitExceeded();
-    error InsufficientLiquidity();
-    error NotStrategy();
+    error Vault_NotGov();
+    error Vault_NotAuthorized();
+    error Vault_ZeroAddress();
+    error Vault_ZeroAmount();
+    error Vault_EmergencyShutdownActive();
+    error Vault_DepositLimitExceeded();
+    error Vault_InsufficientLiquidity();
+    error Vault_NotStrategy();
 
     modifier onlyGov() {
-        if (msg.sender != governance) revert NotGov();
+        if (msg.sender != governance) revert Vault_NotGov();
         _;
     }
 
     modifier onlyGovOrMgmt() {
-        if (msg.sender != governance && msg.sender != management) revert NotAuthorized();
+        if (msg.sender != governance && msg.sender != management) revert Vault_NotAuthorized();
         _;
     }
 
     modifier onlyActiveStrategy() {
-        if (_strategies[msg.sender].activation == 0) revert NotStrategy();
+        if (_strategies[msg.sender].activation == 0) revert Vault_NotStrategy();
         _;
     }
 
@@ -97,8 +91,8 @@ contract BaseVaultUpgradeable is
         string memory name_,
         string memory symbol_
     ) external initializer {
-        if (address(asset_) == address(0)) revert ZeroAddress();
-        if (governance_ == address(0) || rewards_ == address(0)) revert ZeroAddress();
+        if (address(asset_) == address(0)) revert Vault_ZeroAddress();
+        if (governance_ == address(0) || rewards_ == address(0)) revert Vault_ZeroAddress();
 
         __ERC20_init(name_, symbol_);
         __ERC4626_init(asset_);
@@ -112,7 +106,10 @@ contract BaseVaultUpgradeable is
         yieldOracle = yieldOracle_;
 
         activation = block.timestamp;
-        lastReport = block.timestamp;
+
+        // IMPORTANT: separate clocks
+        lastReport = block.timestamp;      // locked profit/report boundary
+        lastFeeAccrual = block.timestamp;  // management fee boundary
         lastRebalance = block.timestamp;
 
         depositLimit = Config.MAX_UINT256;
@@ -120,9 +117,7 @@ contract BaseVaultUpgradeable is
         performanceFee = 1000; // 10%
         managementFee = 200;   // 2%
 
-        // ~6 hours linear unlock at Yearn-ish scale (WAD per second)
-        lockedProfitDegradation = (Config.DEGRADATION_COEFFICIENT * 46) / 1e6;
-
+        lockedProfitDegradation = (Config.WAD * 46) / 1e6; // ~6 hours (WAD per second)
         rebalanceThreshold = 500; // 5%
         minRebalanceInterval = 1 days;
         autoRebalanceEnabled = true;
@@ -144,7 +139,6 @@ contract BaseVaultUpgradeable is
         return Config.API_VERSION;
     }
 
-    // satisfy StrategyRegistry.asset() virtual
     function asset() public view override(StrategyRegistry, ERC4626Upgradeable) returns (address) {
         return ERC4626Upgradeable.asset();
     }
@@ -154,7 +148,6 @@ contract BaseVaultUpgradeable is
     //////////////////////////////////////////////////////////////*/
 
     function totalAssets() public view override returns (uint256) {
-        // accounting: idle + tracked deployed debt
         return _totalIdle() + totalDebt;
     }
 
@@ -170,7 +163,7 @@ contract BaseVaultUpgradeable is
     //////////////////////////////////////////////////////////////*/
 
     function _lockedProfitRemaining() internal view returns (uint256) {
-        return Math.calculateLockedProfit(
+        return VaultMath.calculateLockedProfit(
             lockedProfit,
             lockedProfitDegradation,
             block.timestamp - lastReport
@@ -183,8 +176,7 @@ contract BaseVaultUpgradeable is
         return total > locked ? (total - locked) : 0;
     }
 
-    // Override conversions so new deposits don’t capture locked profit.
-    function _convertToShares(uint256 assets_, Math.Rounding rounding)
+    function _convertToShares(uint256 assets_, OZMath.Rounding rounding)
         internal
         view
         override
@@ -197,11 +189,10 @@ contract BaseVaultUpgradeable is
         if (supply == 0) return assets_;
         if (freeFunds == 0) return 0;
 
-        return Math.proportional(assets_, supply, freeFunds); // floor by default
-        // If you need rounding support, we can switch to OZMath.mulDiv with rounding.
+        return OZMath.mulDiv(assets_, supply, freeFunds, rounding);
     }
 
-    function _convertToAssets(uint256 shares_, Math.Rounding rounding)
+    function _convertToAssets(uint256 shares_, OZMath.Rounding rounding)
         internal
         view
         override
@@ -214,7 +205,7 @@ contract BaseVaultUpgradeable is
         if (supply == 0) return shares_;
         if (freeFunds == 0) return 0;
 
-        return Math.proportional(shares_, freeFunds, supply);
+        return OZMath.mulDiv(shares_, freeFunds, supply, rounding);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -227,24 +218,15 @@ contract BaseVaultUpgradeable is
         nonReentrant
         returns (uint256 shares)
     {
-        if (emergencyShutdown) revert EmergencyShutdownActive();
-        if (assets_ == 0) revert ZeroAmount();
+        if (emergencyShutdown) revert Vault_EmergencyShutdownActive();
+        if (assets_ == 0) revert Vault_ZeroAmount();
+        if (assets_ > maxDeposit(receiver)) revert Vault_DepositLimitExceeded();
 
-        uint256 maxDep = maxDeposit(receiver);
-        if (assets_ > maxDep) revert DepositLimitExceeded();
-
-        // accrue fees before share minting (prevents fee dilution)
         _accrueManagementFee();
-
         shares = super.deposit(assets_, receiver);
 
-        // best-effort rebalance (never revert user deposit)
-        if (autoRebalanceEnabled) {
-            (bool ok,) = shouldRebalance();
-            if (ok) {
-                try this.executeRebalance() returns (bool) {} catch {}
-            }
-        }
+        // Recommendation: DO NOT rebalance inside user flows.
+        // Keep rebalances for keeper/governance/management calls.
     }
 
     function withdraw(uint256 assets_, address receiver, address owner)
@@ -253,14 +235,12 @@ contract BaseVaultUpgradeable is
         nonReentrant
         returns (uint256 shares)
     {
-        if (assets_ == 0) revert ZeroAmount();
+        if (assets_ == 0) revert Vault_ZeroAmount();
 
-        // accrue fees before burning shares
         _accrueManagementFee();
 
-        // Make sure we can pay assets_
         (uint256 freed,) = _liquidate(assets_);
-        if (freed < assets_) revert InsufficientLiquidity();
+        if (freed < assets_) revert Vault_InsufficientLiquidity();
 
         shares = super.withdraw(assets_, receiver, owner);
     }
@@ -281,60 +261,49 @@ contract BaseVaultUpgradeable is
                         STRATEGY REPORTING
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Strategy reports realized profit/loss and debt repayment.
-     * @dev Only callable by active strategy; must pass strategy == msg.sender.
-     */
     function report(address strategy, uint256 gain, uint256 loss, uint256 debtPayment)
         external
         onlyActiveStrategy
         returns (uint256 newStrategyDebt)
     {
-        if (strategy != msg.sender) revert NotStrategy();
+        if (strategy != msg.sender) revert Vault_NotStrategy();
 
-        // accrue mgmt fee at report boundary too
         _accrueManagementFee();
 
         StrategyParams storage s = _strategies[strategy];
 
-        // apply debt repayment
         if (debtPayment > 0) {
             if (debtPayment > s.totalDebt) debtPayment = s.totalDebt;
             _decreaseStrategyDebt(strategy, debtPayment);
         }
 
-        // loss accounting
         if (loss > 0) {
             s.totalLoss += loss;
             _reportLoss(strategy, loss);
         }
 
-        // profit + performance fee
         uint256 perfFeeAssets = 0;
         uint256 netGain = gain;
 
-        if (gain > 0 && performanceFee > 0 && rewards != address(0)) {
-            perfFeeAssets = (gain * performanceFee) / Config.MAX_BPS;
-            if (perfFeeAssets > gain) perfFeeAssets = gain;
-            netGain = gain - perfFeeAssets;
-        }
-
         if (gain > 0) {
             s.totalGain += gain;
+
+            if (performanceFee > 0 && rewards != address(0)) {
+                perfFeeAssets = (gain * performanceFee) / Config.MAX_BPS;
+                if (perfFeeAssets > gain) perfFeeAssets = gain;
+                netGain = gain - perfFeeAssets;
+            }
+
+            if (netGain > 0) lockedProfit += netGain;
+
+            if (perfFeeAssets > 0) {
+                uint256 feeShares = previewDeposit(perfFeeAssets);
+                _mint(rewards, feeShares);
+                emit FeesMinted(rewards, feeShares, perfFeeAssets);
+            }
         }
 
-        // lock net gain only
-        if (netGain > 0) {
-            lockedProfit += netGain;
-        }
-
-        // mint fee shares to rewards (denominated by current freeFunds PPS)
-        if (perfFeeAssets > 0) {
-            uint256 feeShares = previewDeposit(perfFeeAssets);
-            _mint(rewards, feeShares);
-            emit FeesMinted(rewards, feeShares, perfFeeAssets);
-        }
-
+        // locked profit/report boundary
         s.lastReport = block.timestamp;
         lastReport = block.timestamp;
 
@@ -348,15 +317,13 @@ contract BaseVaultUpgradeable is
 
     function _accrueManagementFee() internal {
         if (managementFee == 0 || rewards == address(0)) {
-            lastReport = block.timestamp;
+            lastFeeAccrual = block.timestamp;
             return;
         }
 
-        uint256 dt = block.timestamp - lastReport;
+        uint256 dt = block.timestamp - lastFeeAccrual;
         if (dt == 0) return;
 
-        // mgmt fee assets ~= totalAssets * (mgmtFeeBps / MAX_BPS) * (dt / year)
-        // simplified linear approximation
         uint256 feeAssets = (totalAssets() * managementFee * dt)
             / (Config.MAX_BPS * Config.SECS_PER_YEAR);
 
@@ -366,15 +333,15 @@ contract BaseVaultUpgradeable is
             emit FeesMinted(rewards, feeShares, feeAssets);
         }
 
-        lastReport = block.timestamp;
+        lastFeeAccrual = block.timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
-                        LOSS HANDLING HOOK
+                        LOSS HOOK
     //////////////////////////////////////////////////////////////*/
 
     function _reportLoss(address, uint256) internal override {
-        // v1 hook: later add maxLoss checks, guardian alerts, auto-pause, etc.
+        // hook
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -400,21 +367,17 @@ contract BaseVaultUpgradeable is
     }
 
     function acceptGovernance() external {
-        if (msg.sender != pendingGovernance) revert NotGov();
+        if (msg.sender != pendingGovernance) revert Vault_NotGov();
         governance = msg.sender;
         pendingGovernance = address(0);
         emit GovernanceAccepted(msg.sender);
     }
 
     function setYieldOracle(address oracle) external onlyGovOrMgmt {
-        if (oracle == address(0)) revert ZeroAddress();
+        if (oracle == address(0)) revert Vault_ZeroAddress();
         yieldOracle = oracle;
         emit YieldOracleUpdated(oracle);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                            STORAGE GAP
-    //////////////////////////////////////////////////////////////*/
 
     uint256[50] private __gap;
 }
