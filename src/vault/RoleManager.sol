@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Roles} from "../config/Roles.sol";
 
@@ -13,8 +13,12 @@ abstract contract RoleManager {
     mapping(address => uint256) internal _roles;
 
     modifier onlyAdmin() {
-        if (msg.sender != roleAdmin) revert NotAdmin();
+        _onlyAdmin();
         _;
+    }
+
+    function _onlyAdmin() internal view {
+        if (msg.sender != roleAdmin) revert NotAdmin();
     }
 
     function rolesOf(address account) external view returns (uint256) {

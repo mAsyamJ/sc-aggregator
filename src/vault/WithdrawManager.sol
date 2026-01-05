@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {StrategyRegistry} from "./StrategyRegistry.sol";
 import {IStrategy} from "../interfaces/IStrategy.sol";
@@ -18,19 +18,9 @@ abstract contract WithdrawManager is StrategyRegistry {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event WithdrawLiquidation(
-        address indexed strategy,
-        uint256 requested,
-        uint256 repaid,
-        uint256 loss
-    );
+    event WithdrawLiquidation(address indexed strategy, uint256 requested, uint256 repaid, uint256 loss);
 
-    event WithdrawSummary(
-        uint256 amountNeeded,
-        uint256 startingIdle,
-        uint256 repaidFromStrategies,
-        uint256 totalLoss
-    );
+    event WithdrawSummary(uint256 amountNeeded, uint256 startingIdle, uint256 repaidFromStrategies, uint256 totalLoss);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -44,10 +34,7 @@ abstract contract WithdrawManager is StrategyRegistry {
      * @return freedTotal total underlying available after liquidation attempt (idle + repaid)
      * @return totalLoss total realized loss during liquidation
      */
-    function _liquidate(uint256 amountNeeded)
-        internal
-        returns (uint256 freedTotal, uint256 totalLoss)
-    {
+    function _liquidate(uint256 amountNeeded) internal returns (uint256 freedTotal, uint256 totalLoss) {
         if (amountNeeded == 0) return (0, 0);
 
         uint256 startingIdle = _totalIdle();

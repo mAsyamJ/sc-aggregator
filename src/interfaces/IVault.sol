@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
@@ -38,12 +38,9 @@ interface IVault is IERC4626 {
      * @param debtPayment Amount returned to the vault as debt repayment.
      * @return newStrategyDebt The updated totalDebt for this strategy after accounting.
      */
-    function report(
-        address strategy,
-        uint256 gain,
-        uint256 loss,
-        uint256 debtPayment
-    ) external returns (uint256 newStrategyDebt);
+    function report(address strategy, uint256 gain, uint256 loss, uint256 debtPayment)
+        external
+        returns (uint256 newStrategyDebt);
 
     /*//////////////////////////////////////////////////////////////
                                 EMERGENCY

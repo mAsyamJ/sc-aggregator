@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
-
-import {Config} from "../config/Constants.sol";
+pragma solidity ^0.8.24;
 
 /**
  * @title VaultStorage
@@ -38,8 +36,8 @@ abstract contract VaultStorage {
                                 ACCOUNTING
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public totalDebt;       // sum of all strategy debts
-    uint256 public totalDebtRatio;  // sum of all strategy debt ratios (bps)
+    uint256 public totalDebt; // sum of all strategy debts
+    uint256 public totalDebtRatio; // sum of all strategy debt ratios (bps)
 
     uint256 public lastReport;
     uint256 public activation;
@@ -53,13 +51,14 @@ abstract contract VaultStorage {
     //////////////////////////////////////////////////////////////*/
 
     uint256 public performanceFee; // bps
-    uint256 public managementFee;  // bps
+    uint256 public managementFee; // bps
+    uint256 public lastFeeAccrual; // timestamp for management fee accrual
 
     /*//////////////////////////////////////////////////////////////
                                 REBALANCE CONFIG
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public rebalanceThreshold;   // bps
+    uint256 public rebalanceThreshold; // bps
     uint256 public minRebalanceInterval; // seconds
     uint256 public lastRebalance;
 
@@ -68,25 +67,25 @@ abstract contract VaultStorage {
     //////////////////////////////////////////////////////////////*/
 
     struct StrategyParams {
-        uint256 performanceFee;     // bps
-        uint256 activation;         // timestamp
-        uint256 debtRatio;          // bps
-        uint256 minDebtPerHarvest;  // underlying units
-        uint256 maxDebtPerHarvest;  // underlying units
-        uint256 lastReport;         // timestamp
+        uint256 performanceFee; // bps
+        uint256 activation; // timestamp
+        uint256 debtRatio; // bps
+        uint256 minDebtPerHarvest; // underlying units
+        uint256 maxDebtPerHarvest; // underlying units
+        uint256 lastReport; // timestamp
 
         uint256 totalDebt;
         uint256 totalGain;
         uint256 totalLoss;
 
-        uint256 lastAPY;            // WAD (1e18)
-        uint256 riskScore;          // 1..10
+        uint256 lastApy; // WAD (1e18)
+        uint256 riskScore; // 1..10
     }
 
     mapping(address => StrategyParams) internal _strategies;
     address[] internal _withdrawalQueue;
 
     // optional caches (cheap reads)
-    mapping(address => uint256) public strategyAPYs;       // WAD
+    mapping(address => uint256) public strategyApys; // WAD
     mapping(address => uint256) public strategyRiskScores; // 1..10
 }

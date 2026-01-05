@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Config} from "../config/Constants.sol";
 import {Math as OZMath} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -56,7 +56,7 @@ library Math {
 
     function proportionalUp(uint256 amount, uint256 part, uint256 total) internal pure returns (uint256) {
         if (total == 0) return 0;
-        return OZMath.mulDiv(amount, part, total, OZMath.Rounding.Ceil);
+        return OZMath.mulDiv(amount, part, total, OZMath.Rounding.Up);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -90,11 +90,11 @@ library Math {
      * @dev `lockedProfitDegradation` is scaled by 1e18 per second (WAD).
      *      Equivalent to Yearn-style locked profit.
      */
-    function calculateLockedProfit(
-        uint256 lockedProfit,
-        uint256 lockedProfitDegradation,
-        uint256 timeElapsed
-    ) internal pure returns (uint256) {
+    function calculateLockedProfit(uint256 lockedProfit, uint256 lockedProfitDegradation, uint256 timeElapsed)
+        internal
+        pure
+        returns (uint256)
+    {
         if (lockedProfit == 0 || lockedProfitDegradation == 0) return 0;
 
         // decay = timeElapsed * degradation (WAD). cap at 1e18.

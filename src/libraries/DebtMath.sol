@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Config} from "../config/Constants.sol";
 import {Math} from "./Math.sol";
@@ -59,11 +59,11 @@ library DebtMath {
         return available;
     }
 
-    function calculateDebtOutstanding(
-        uint256 strategyDebtRatioBps,
-        uint256 strategyTotalDebt,
-        uint256 vaultTotalAssets
-    ) internal pure returns (uint256) {
+    function calculateDebtOutstanding(uint256 strategyDebtRatioBps, uint256 strategyTotalDebt, uint256 vaultTotalAssets)
+        internal
+        pure
+        returns (uint256)
+    {
         // If ratio is 0 => strategy should exit: entire debt outstanding
         if (strategyDebtRatioBps == 0) return strategyTotalDebt;
         if (vaultTotalAssets == 0) return strategyTotalDebt;
@@ -79,9 +79,9 @@ library DebtMath {
     //////////////////////////////////////////////////////////////*/
 
     struct AllocationConfig {
-        uint256 minAllocBps;   // e.g. 50 = 0.5% (set 0 to disable)
-        uint256 maxAllocBps;   // e.g. 3000 = 30% (set 0 to disable)
-        uint8   power;         // >= 1. 1 = linear. 2+ reduces churn (stability).
+        uint256 minAllocBps; // e.g. 50 = 0.5% (set 0 to disable)
+        uint256 maxAllocBps; // e.g. 3000 = 30% (set 0 to disable)
+        uint8 power; // >= 1. 1 = linear. 2+ reduces churn (stability).
     }
 
     /**
@@ -116,9 +116,7 @@ library DebtMath {
         for (uint256 i = 0; i < n; ++i) {
             uint256 risk = _clampRisk(riskScores[i]);
 
-            uint256 conf = (confidenceBps.length == 0)
-                ? Config.MAX_BPS
-                : Math.min(confidenceBps[i], Config.MAX_BPS);
+            uint256 conf = (confidenceBps.length == 0) ? Config.MAX_BPS : Math.min(confidenceBps[i], Config.MAX_BPS);
 
             // score in WAD-ish units: apyWad * conf / (risk * MAX_BPS)
             // keep precision: (apyWad * conf) / risk
@@ -158,11 +156,11 @@ library DebtMath {
      * @notice Portfolio yield = sum(debt_i * apy_i) / totalDebt.
      * @dev Returns APY in WAD (1e18).
      */
-    function calculatePortfolioYieldWad(
-        uint256[] memory debts,
-        uint256[] memory apyWad,
-        uint256 totalDebt_
-    ) internal pure returns (uint256) {
+    function calculatePortfolioYieldWad(uint256[] memory debts, uint256[] memory apyWad, uint256 totalDebt_)
+        internal
+        pure
+        returns (uint256)
+    {
         if (totalDebt_ == 0) return 0;
         require(debts.length == apyWad.length, "DebtMath: length mismatch");
 
@@ -196,11 +194,7 @@ library DebtMath {
         return y;
     }
 
-    function _capMaxAndRenormalize(uint256[] memory alloc, uint256 maxBps)
-        private
-        pure
-        returns (uint256[] memory)
-    {
+    function _capMaxAndRenormalize(uint256[] memory alloc, uint256 maxBps) private pure returns (uint256[] memory) {
         if (maxBps >= Config.MAX_BPS) return alloc;
 
         uint256 n = alloc.length;
@@ -219,11 +213,7 @@ library DebtMath {
         return alloc;
     }
 
-    function _zeroDustAndRenormalize(uint256[] memory alloc, uint256 minBps)
-        private
-        pure
-        returns (uint256[] memory)
-    {
+    function _zeroDustAndRenormalize(uint256[] memory alloc, uint256 minBps) private pure returns (uint256[] memory) {
         uint256 n = alloc.length;
         uint256 sum = 0;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 /**
  * @title Roles
@@ -11,11 +11,11 @@ library Roles {
                                 ROLE BITS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 internal constant STRATEGIST        = 1 << 0; // can propose/add strategies (if allowed)
-    uint256 internal constant KEEPER            = 1 << 1; // can call upkeep (rebalance/harvest triggers)
-    uint256 internal constant ACCOUNTANT        = 1 << 2; // can call report-like accounting ops (optional)
-    uint256 internal constant EMERGENCY_ADMIN   = 1 << 3; // can trigger emergency actions
-    uint256 internal constant REBALANCE_ADMIN   = 1 << 4; // can force rebalance / change params
+    uint256 internal constant STRATEGIST = 1 << 0; // can propose/add strategies (if allowed)
+    uint256 internal constant KEEPER = 1 << 1; // can call upkeep (rebalance/harvest triggers)
+    uint256 internal constant ACCOUNTANT = 1 << 2; // can call report-like accounting ops (optional)
+    uint256 internal constant EMERGENCY_ADMIN = 1 << 3; // can trigger emergency actions
+    uint256 internal constant REBALANCE_ADMIN = 1 << 4; // can force rebalance / change params
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS

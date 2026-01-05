@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {StrategyRegistry} from "./StrategyRegistry.sol";
 import {IYieldOracle} from "../interfaces/IYieldOracle.sol";
@@ -79,8 +79,7 @@ abstract contract RebalanceManager is StrategyRegistry {
         uint256 targetYield = _targetYieldWad(targets, allocBps);
         if (targetYield <= currentYield) return (false, 0);
 
-        uint256 improvementWad =
-            ((targetYield - currentYield) * Config.DEGRADATION_COEFFICIENT) / currentYield;
+        uint256 improvementWad = ((targetYield - currentYield) * Config.DEGRADATION_COEFFICIENT) / currentYield;
 
         improvementBps = (improvementWad * Config.MAX_BPS) / Config.DEGRADATION_COEFFICIENT;
         if (improvementBps < rebalanceThreshold) return (false, 0);
@@ -104,7 +103,9 @@ abstract contract RebalanceManager is StrategyRegistry {
         if (targets.length == 0) revert RM_NoValidCandidates();
 
         uint256 sum;
-        for (uint256 i; i < allocBps.length; ++i) sum += allocBps[i];
+        for (uint256 i; i < allocBps.length; ++i) {
+            sum += allocBps[i];
+        }
         if (sum == 0 || sum > Config.MAX_BPS) revert RM_InvalidAllocation();
 
         // coverage gate
@@ -167,7 +168,10 @@ abstract contract RebalanceManager is StrategyRegistry {
 
             // skip inactive strategies defensively
             bool active = true;
-            try IStrategy(strat).isActive() returns (bool a) { active = a; } catch {}
+            try IStrategy(strat).isActive() returns (bool a) {
+                active = a;
+            }
+                catch {}
             if (!active) continue;
 
             uint256 desiredDebt = (totalAssets_ * allocBps[i]) / Config.MAX_BPS;
@@ -198,11 +202,7 @@ abstract contract RebalanceManager is StrategyRegistry {
                         ORACLE → TARGET ALLOCATION
     //////////////////////////////////////////////////////////////*/
 
-    function calculateOptimalAllocation()
-        external
-        view
-        returns (address[] memory targets, uint256[] memory allocBps)
-    {
+    function calculateOptimalAllocation() external view returns (address[] memory targets, uint256[] memory allocBps) {
         return _optimalAllocationFromOracle();
     }
 
@@ -217,8 +217,8 @@ abstract contract RebalanceManager is StrategyRegistry {
         (address[] memory candidates, IYieldOracle.YieldQuote[] memory quotes) =
             IYieldOracle(oracle).getCandidates(asset());
 
-        if (candidates.length == 0) return (new address, new uint256);
-        if (quotes.length != candidates.length) return (new address, new uint256);
+        if (candidates.length == 0) return (new address[](0), new uint256[](0));
+        if (quotes.length != candidates.length) return (new address[](0), new uint256[](0));
 
         uint256 maxAge = IYieldOracle(oracle).maxQuoteAge(asset());
         uint16 minConf = _minConfidenceBps();
@@ -249,7 +249,7 @@ abstract contract RebalanceManager is StrategyRegistry {
             k++;
         }
 
-        if (k == 0) return (new address, new uint256);
+        if (k == 0) return (new address[](0), new uint256[](0));
 
         address[] memory finalS = new address[](k);
         uint256[] memory finalApy = new uint256[](k);
@@ -281,8 +281,8 @@ abstract contract RebalanceManager is StrategyRegistry {
             StrategyParams memory s = _strategies[strat];
             if (s.activation == 0 || s.totalDebt == 0) continue;
 
-            uint256 apy = strategyAPYs[strat];
-            if (apy == 0) apy = s.lastAPY;
+            uint256 apy = strategyApys[strat];
+            if (apy == 0) apy = s.lastApy;
 
             weightedUnderlying += (s.totalDebt * apy) / Config.DEGRADATION_COEFFICIENT;
             debtSum += s.totalDebt;
@@ -295,8 +295,8 @@ abstract contract RebalanceManager is StrategyRegistry {
     function _targetYieldWad(address[] memory targets, uint256[] memory allocBps) internal view returns (uint256) {
         uint256 total;
         for (uint256 i; i < targets.length; ++i) {
-            uint256 apy = strategyAPYs[targets[i]];
-            if (apy == 0) apy = _strategies[targets[i]].lastAPY;
+            uint256 apy = strategyApys[targets[i]];
+            if (apy == 0) apy = _strategies[targets[i]].lastApy;
             total += allocBps[i] * apy;
         }
         return total / Config.MAX_BPS;

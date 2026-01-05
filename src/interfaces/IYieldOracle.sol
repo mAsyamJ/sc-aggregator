@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 /**
  * @title IYieldOracle
@@ -12,12 +12,12 @@ interface IYieldOracle {
     //////////////////////////////////////////////////////////////*/
 
     struct YieldQuote {
-        uint256 apyWad;          // 1e18 (e.g. 0.05e18 = 5% APR)
-        uint8   riskScore;       // 1..10 (lower safer)
-        uint16  confidenceBps;   // 0..10_000 confidence estimate
-        uint256 updatedAt;       // unix timestamp
-        uint80  roundId;         // oracle round id
-        uint80  answeredInRound; // chainlink-style safety
+        uint256 apyWad; // 1e18 (e.g. 0.05e18 = 5% APR)
+        uint8 riskScore; // 1..10 (lower safer)
+        uint16 confidenceBps; // 0..10_000 confidence estimate
+        uint256 updatedAt; // unix timestamp
+        uint80 roundId; // oracle round id
+        uint80 answeredInRound; // chainlink-style safety
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -42,10 +42,7 @@ interface IYieldOracle {
      * @notice Latest yield quote for (asset, strategy).
      * @dev Vault/rebalance manager should enforce staleness using maxQuoteAge(asset).
      */
-    function latestYield(address asset, address strategy)
-        external
-        view
-        returns (YieldQuote memory q);
+    function latestYield(address asset, address strategy) external view returns (YieldQuote memory q);
 
     /**
      * @notice Round-based quote data for (asset, strategy) similar to Chainlink.

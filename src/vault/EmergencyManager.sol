@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {StrategyRegistry} from "./StrategyRegistry.sol";
 import {IStrategy} from "../interfaces/IStrategy.sol";
@@ -13,11 +13,13 @@ abstract contract EmergencyManager is StrategyRegistry {
     event EmergencyShutdownSet(bool active);
     event StrategyEmergencyExit(address indexed strategy);
 
-    error NotAuthorized();
-
     modifier onlyGovOrGuardian() {
-        if (msg.sender != governance && msg.sender != guardian) revert NotAuthorized();
+        _onlyGovOrGuardian();
         _;
+    }
+
+    function _onlyGovOrGuardian() internal view {
+        if (msg.sender != governance && msg.sender != guardian) revert NotAuthorized();
     }
 
     function setEmergencyShutdown(bool active) external onlyGovOrGuardian {
@@ -30,7 +32,7 @@ abstract contract EmergencyManager is StrategyRegistry {
      * @dev Strategy must implement emergency exit mode internally.
      */
     function forceStrategyEmergencyExit(address strategy) external onlyGovOrGuardian {
-        if (!isStrategy(strategy)) revert StrategyNotFound();
+        if (!isStrategy(strategy)) revert UnknownStrategy();
         IStrategy(strategy).harvest(); // optional: attempt a safe report first (strategy decides)
         emit StrategyEmergencyExit(strategy);
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 /**
  * @title IStrategy
@@ -44,7 +44,7 @@ interface IStrategy {
     function maxLiquidatable() external view returns (uint256);
 
     /// @notice Estimated APY as 1e18 fixed-point (e.g., 0.05e18 = 5% APR).
-    function estimatedAPY() external view returns (uint256);
+    function estimatedApy() external view returns (uint256);
 
     /// @notice Risk score in [1..10] (lower is safer).
     function riskScore() external view returns (uint256);

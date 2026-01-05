@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 /**
  * @title Config
@@ -23,11 +23,11 @@ library Config {
 
     // ========== FEE LIMITS ==========
     uint256 internal constant MAX_PERFORMANCE_FEE = 5_000; // 50%
-    uint256 internal constant MAX_MANAGEMENT_FEE  = 1_000; // 10%
+    uint256 internal constant MAX_MANAGEMENT_FEE = 1_000; // 10%
     uint256 internal constant MAX_STRATEGY_PERFORMANCE_FEE = 5_000; // 50%
 
     // ========== REBALANCE LIMITS ==========
-    uint256 internal constant MIN_REBALANCE_THRESHOLD = 100;   // 1%
+    uint256 internal constant MIN_REBALANCE_THRESHOLD = 100; // 1%
     uint256 internal constant MAX_REBALANCE_THRESHOLD = 5_000; // 50%
     uint256 internal constant MIN_REBALANCE_INTERVAL = 1 hours;
     uint256 internal constant MAX_REBALANCE_INTERVAL = 30 days;

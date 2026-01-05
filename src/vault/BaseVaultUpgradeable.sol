@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import {Math as OZMath} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -63,18 +64,33 @@ contract BaseVaultUpgradeable is
     error Vault_NotStrategy();
 
     modifier onlyGov() {
+        _onlyGov();
+        _;
+    }
+
+    function _onlyGov() internal view {
         if (msg.sender != governance) revert Vault_NotGov();
+    }
+
+    modifier onlyGovOrMgmt() override {
+        _onlyGovOrMgmt();
         _;
     }
 
-    modifier onlyGovOrMgmt() {
+    function _onlyGovOrMgmt() internal view override {
         if (msg.sender != governance && msg.sender != management) revert Vault_NotAuthorized();
+    }
+
+    function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable) returns (uint8) {
+        return super.decimals();
+    }
+    modifier onlyActiveStrategy() {
+        _onlyActiveStrategy();
         _;
     }
 
-    modifier onlyActiveStrategy() {
+    function _onlyActiveStrategy() internal view {
         if (_strategies[msg.sender].activation == 0) revert Vault_NotStrategy();
-        _;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -95,7 +111,7 @@ contract BaseVaultUpgradeable is
         if (governance_ == address(0) || rewards_ == address(0)) revert Vault_ZeroAddress();
 
         __ERC20_init(name_, symbol_);
-        __ERC4626_init(asset_);
+        __ERC4626_init(IERC20Upgradeable(address(asset_)));
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
 
@@ -108,14 +124,14 @@ contract BaseVaultUpgradeable is
         activation = block.timestamp;
 
         // IMPORTANT: separate clocks
-        lastReport = block.timestamp;      // locked profit/report boundary
-        lastFeeAccrual = block.timestamp;  // management fee boundary
+        lastReport = block.timestamp; // locked profit/report boundary
+        lastFeeAccrual = block.timestamp; // management fee boundary
         lastRebalance = block.timestamp;
 
         depositLimit = Config.MAX_UINT256;
 
         performanceFee = 1000; // 10%
-        managementFee = 200;   // 2%
+        managementFee = 200; // 2%
 
         lockedProfitDegradation = (Config.WAD * 46) / 1e6; // ~6 hours (WAD per second)
         rebalanceThreshold = 500; // 5%
@@ -163,11 +179,7 @@ contract BaseVaultUpgradeable is
     //////////////////////////////////////////////////////////////*/
 
     function _lockedProfitRemaining() internal view returns (uint256) {
-        return VaultMath.calculateLockedProfit(
-            lockedProfit,
-            lockedProfitDegradation,
-            block.timestamp - lastReport
-        );
+        return VaultMath.calculateLockedProfit(lockedProfit, lockedProfitDegradation, block.timestamp - lastReport);
     }
 
     function _freeFunds() internal view returns (uint256) {
@@ -176,12 +188,7 @@ contract BaseVaultUpgradeable is
         return total > locked ? (total - locked) : 0;
     }
 
-    function _convertToShares(uint256 assets_, OZMath.Rounding rounding)
-        internal
-        view
-        override
-        returns (uint256)
-    {
+    function _convertToShares(uint256 assets_, OZMath.Rounding rounding) internal view returns (uint256) {
         uint256 supply = totalSupply();
         uint256 freeFunds = _freeFunds();
 
@@ -192,12 +199,7 @@ contract BaseVaultUpgradeable is
         return OZMath.mulDiv(assets_, supply, freeFunds, rounding);
     }
 
-    function _convertToAssets(uint256 shares_, OZMath.Rounding rounding)
-        internal
-        view
-        override
-        returns (uint256)
-    {
+    function _convertToAssets(uint256 shares_, OZMath.Rounding rounding) internal view returns (uint256) {
         uint256 supply = totalSupply();
         uint256 freeFunds = _freeFunds();
 
@@ -212,12 +214,7 @@ contract BaseVaultUpgradeable is
                         DEPOSIT / WITHDRAW
     //////////////////////////////////////////////////////////////*/
 
-    function deposit(uint256 assets_, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256 shares)
-    {
+    function deposit(uint256 assets_, address receiver) public override nonReentrant returns (uint256 shares) {
         if (emergencyShutdown) revert Vault_EmergencyShutdownActive();
         if (assets_ == 0) revert Vault_ZeroAmount();
         if (assets_ > maxDeposit(receiver)) revert Vault_DepositLimitExceeded();
@@ -324,8 +321,7 @@ contract BaseVaultUpgradeable is
         uint256 dt = block.timestamp - lastFeeAccrual;
         if (dt == 0) return;
 
-        uint256 feeAssets = (totalAssets() * managementFee * dt)
-            / (Config.MAX_BPS * Config.SECS_PER_YEAR);
+        uint256 feeAssets = (totalAssets() * managementFee * dt) / (Config.MAX_BPS * Config.SECS_PER_YEAR);
 
         if (feeAssets > 0) {
             uint256 feeShares = previewDeposit(feeAssets);
@@ -340,7 +336,7 @@ contract BaseVaultUpgradeable is
                         LOSS HOOK
     //////////////////////////////////////////////////////////////*/
 
-    function _reportLoss(address, uint256) internal override {
+    function _reportLoss(address, uint256) internal override(RebalanceManager, WithdrawManager) {
         // hook
     }
 
@@ -379,5 +375,5 @@ contract BaseVaultUpgradeable is
         emit YieldOracleUpdated(oracle);
     }
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

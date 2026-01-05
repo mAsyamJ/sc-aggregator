@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {VaultStorage} from "./VaultStorage.sol";
 import {IStrategy} from "../interfaces/IStrategy.sol";
@@ -24,11 +24,7 @@ abstract contract StrategyRegistry is VaultStorage {
         uint256 performanceFeeBps
     );
 
-    event StrategyRevoked(
-        address indexed strategy,
-        uint256 priorDebtRatioBps,
-        uint256 outstandingDebt
-    );
+    event StrategyRevoked(address indexed strategy, uint256 priorDebtRatioBps, uint256 outstandingDebt);
 
     event WithdrawalQueueUpdated(address[] queue);
 
@@ -58,14 +54,22 @@ abstract contract StrategyRegistry is VaultStorage {
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyGovOrMgmt() {
-        if (msg.sender != governance && msg.sender != management) revert NotAuthorized();
+    modifier onlyGovOrMgmt() virtual {
+        _onlyGovOrMgmt();
         _;
     }
 
+    function _onlyGovOrMgmt() internal view virtual {
+        if (msg.sender != governance && msg.sender != management) revert NotAuthorized();
+    }
+
     modifier onlyStrategy() {
-        if (_strategies[msg.sender].activation == 0) revert UnknownStrategy();
+        _onlyStrategy();
         _;
+    }
+
+    function _onlyStrategy() internal view {
+        if (_strategies[msg.sender].activation == 0) revert UnknownStrategy();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,8 +147,14 @@ abstract contract StrategyRegistry is VaultStorage {
         // fetch initial metrics (best-effort)
         uint256 apy = 0;
         uint256 risk = Config.DEFAULT_RISK_SCORE;
-        try strat.estimatedAPY() returns (uint256 a) { apy = a; } catch {}
-        try strat.riskScore() returns (uint256 r) { risk = r; } catch {}
+        try strat.estimatedApy() returns (uint256 a) {
+            apy = a;
+        }
+            catch {}
+        try strat.riskScore() returns (uint256 r) {
+            risk = r;
+        }
+            catch {}
 
         _strategies[strategy] = StrategyParams({
             performanceFee: strategyPerformanceFeeBps,
@@ -156,11 +166,11 @@ abstract contract StrategyRegistry is VaultStorage {
             totalDebt: 0,
             totalGain: 0,
             totalLoss: 0,
-            lastAPY: apy,
+            lastApy: apy,
             riskScore: risk
         });
 
-        strategyAPYs[strategy] = apy;
+        strategyApys[strategy] = apy;
         strategyRiskScores[strategy] = risk;
 
         totalDebtRatio += debtRatioBps;
@@ -283,7 +293,9 @@ abstract contract StrategyRegistry is VaultStorage {
 
         // overwrite storage array
         delete _withdrawalQueue;
-        for (uint256 i; i < n; ++i) _withdrawalQueue.push(newQueue[i]);
+        for (uint256 i; i < n; ++i) {
+            _withdrawalQueue.push(newQueue[i]);
+        }
 
         emit WithdrawalQueueUpdated(_withdrawalQueue);
     }

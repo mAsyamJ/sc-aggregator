@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IYieldOracle} from "../interfaces/IYieldOracle.sol";
 import {Config} from "../config/Constants.sol";
 
 contract MockYieldOracle is IYieldOracle {
-    string public constant override description = "Mock Yield Oracle";
-    uint256 public constant override version = 1;
+    string public constant DESCRIPTION_VAL = "Mock Yield Oracle";
+    uint256 public constant VERSION_VAL = 1;
+
+    function description() external pure override returns (string memory) {
+        return DESCRIPTION_VAL;
+    }
+
+    function version() external pure override returns (uint256) {
+        return VERSION_VAL;
+    }
 
     // asset => max age
     mapping(address => uint256) public override maxQuoteAge;
@@ -31,13 +39,9 @@ contract MockYieldOracle is IYieldOracle {
         _candidates[asset] = strategies;
     }
 
-    function pushQuote(
-        address asset,
-        address strategy,
-        uint256 apyWad,
-        uint8 riskScore,
-        uint16 confidenceBps
-    ) external {
+    function pushQuote(address asset, address strategy, uint256 apyWad, uint8 riskScore, uint16 confidenceBps)
+        external
+    {
         uint80 rid = _roundId[asset][strategy] + 1;
         _roundId[asset][strategy] = rid;
 
