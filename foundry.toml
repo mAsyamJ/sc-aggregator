@@ -5,6 +5,9 @@ out = "out"
 libs = ["lib"]
 via_ir = true
 
+optimizer = true
+optimizer_runs = 200
+
 remappings = [
   "forge-std/=lib/forge-std/src/",
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",

@@ -94,6 +94,43 @@ forge script script/DeployLiskSepolia.s.sol:DeployLiskSepolia \
   -vvvv
 ```
 
+## Verify Contracts
+
+### Implementation Contract:
+```bash
+forge verify-contract \
+  --rpc-url https://rpc.sepolia-api.lisk.com \
+  --verifier blockscout \
+  --verifier-url 'https://sepolia-blockscout.lisk.com/api/' \
+  0xa85D9Cf90E1b8614DEEc04A955a486D5E43c3297 \
+  src/vault/BaseVaultUpgradeable.sol:BaseVaultUpgradeable
+```
+
+**Status:** ✅ Verification submitted (GUID: `a85d9cf90e1b8614deec04a955a486d5e43c3297695fc520`)
+
+**Verification Explorer Link:** https://sepolia-blockscout.lisk.com/address/0xa85d9cf90e1b8614deec04a955a486d5e43c3297
+
+### PROXY Contract:
+```bash
+forge verify-contract \
+  --rpc-url https://rpc.sepolia-api.lisk.com \
+  --verifier blockscout \
+  --verifier-url 'https://sepolia-blockscout.lisk.com/api/' \
+  0xFb1D46A682f66058BD1f3478d5d743B9B0268aCC \
+  lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --constructor-args 0x000000000000000000000000a85d9cf90e1b8614deec04a955a486d5e43c329700000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000144ef090e4c0000000000000000000000003ded1e4958315dbfa44ffe38b763de5b17690c57000000000000000000000000beaa395506d02d20749d8e39ddb996ace1c85bfc000000000000000000000000beaa395506d02d20749d8e39ddb996ace1c85bfc000000000000000000000000beaa395506d02d20749d8e39ddb996ace1c85bfc000000000000000000000000beaa395506d02d20749d8e39ddb996ace1c85bfc0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+```
+
+**Status:** ✅ Already verified on Blockscout
+
+**Proxy Explorer Link:** https://sepolia-blockscout.lisk.com/address/0xFb1D46A682f66058BD1f3478d5d743B9B0268aCC
+
+### Auto-verify Helper:
+To verify contracts automatically with constructor args, use:
+```bash
+./scripts/verify_proxy.sh
+```
+
 forge script script/ScenarioLiskSepolia_E2E_Rebalance.s.sol:ScenarioLiskSepolia_E2E_Rebalance \
   --rpc-url $LISK_SEPOLIA_RPC \
   --broadcast \
