@@ -26,7 +26,7 @@ contract AaveYieldOracleAdapter is IYieldOracle {
     address public immutable ASSET;
     MockAavePool public immutable POOL;
 
-    uint256 public immutable override maxQuoteAge;
+    uint256 private immutable _maxQuoteAge;
 
     /*//////////////////////////////////////////////////////////////
                                 METADATA
@@ -54,7 +54,12 @@ contract AaveYieldOracleAdapter is IYieldOracle {
     ) {
         ASSET = asset_;
         POOL = pool_;
-        maxQuoteAge = maxQuoteAge_;
+        _maxQuoteAge = maxQuoteAge_;
+    }
+
+    function maxQuoteAge(address asset) external view override returns (uint256) {
+        require(asset == ASSET, "unsupported asset");
+        return _maxQuoteAge;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -176,8 +181,8 @@ contract AaveYieldOracleAdapter is IYieldOracle {
     {
         require(asset == ASSET, "unsupported asset");
 
-        strategies = new address;
-        quotes = new YieldQuote;
+        strategies = new address[](1);
+        quotes = new YieldQuote[](1);
 
         // Strategy discovery is advisory; vault filters registered strategies
         strategies[0] = address(0);

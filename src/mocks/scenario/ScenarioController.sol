@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {MockAavePool} from "../aave/MockAavePool.sol";
 import {MockAaveInterestRate} from "../aave/MockAaveInterestRate.sol";
-import {Config} from "../../config/Constants.sol";
 
 /**
  * @title ScenarioController

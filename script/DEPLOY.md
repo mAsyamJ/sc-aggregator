@@ -94,6 +94,12 @@ forge script script/DeployLiskSepolia.s.sol:DeployLiskSepolia \
   -vvvv
 ```
 
+forge script script/ScenarioLiskSepolia_E2E_Rebalance.s.sol:ScenarioLiskSepolia_E2E_Rebalance \
+  --rpc-url $LISK_SEPOLIA_RPC \
+  --broadcast \
+  -vvvv
+
+
 Kalau kamu mau langsung “simulate dulu” tanpa broadcast:
 
 ```bash

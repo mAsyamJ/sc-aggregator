@@ -37,7 +37,7 @@ contract MockAToken {
     uint256 internal _totalScaledSupply;
 
     /// @dev pool that is allowed to mint/burn
-    address public immutable POOL;
+    address public pool;  // Made mutable for easier testing
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -63,7 +63,7 @@ contract MockAToken {
         string memory symbol_,
         uint8 decimals_
     ) {
-        POOL = pool_;
+        pool = pool_;
         name = name_;
         symbol = symbol_;
         decimals = decimals_;
@@ -116,7 +116,7 @@ contract MockAToken {
         uint256 amount,
         uint256 liquidityIndex
     ) external {
-        if (msg.sender != POOL) revert NotPool();
+        if (msg.sender != pool) revert NotPool();
         if (amount == 0) return;
 
         uint256 scaledAmount = _rayDiv(amount, liquidityIndex);
@@ -125,6 +125,13 @@ contract MockAToken {
         _totalScaledSupply += scaledAmount;
 
         emit Mint(user, amount, liquidityIndex);
+    }
+    
+    /**
+     * @notice Set the pool address (for testing/setup)
+     */
+    function setPool(address newPool) external {
+        pool = newPool;
     }
 
     /**
@@ -138,7 +145,7 @@ contract MockAToken {
         uint256 amount,
         uint256 liquidityIndex
     ) external {
-        if (msg.sender != POOL) revert NotPool();
+        if (msg.sender != pool) revert NotPool();
         if (amount == 0) return;
 
         uint256 scaledAmount = _rayDiv(amount, liquidityIndex);
@@ -162,7 +169,7 @@ contract MockAToken {
      */
     function _currentLiquidityIndex() internal view returns (uint256) {
         (bool ok, bytes memory data) =
-            POOL.staticcall(abi.encodeWithSignature("liquidityIndex()"));
+            pool.staticcall(abi.encodeWithSignature("liquidityIndex()"));
         require(ok && data.length >= 32, "INDEX_READ_FAILED");
         return abi.decode(data, (uint256));
     }

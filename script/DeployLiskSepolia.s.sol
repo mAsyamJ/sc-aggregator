@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-// === your contracts ===
+// === napVAULT contracts ===
 import {BaseVaultUpgradeable} from "../src/vault/BaseVaultUpgradeable.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 
@@ -13,13 +14,13 @@ contract DeployLiskSepolia is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
 
-        // You can also hardcode these if you want.
+        // Common addresses
         address gov = vm.addr(pk);
         address mgmt = gov;
         address guardian = gov;
         address rewards = gov;
 
-        // If you don't have YieldOracle deployed yet, set zero for now.
+        // YieldOracle is not deployed yet, set zero for now.
         // But note: RebalanceManager will be disabled until you set a real oracle.
         address yieldOracle = address(0);
 
@@ -27,7 +28,7 @@ contract DeployLiskSepolia is Script {
 
         // 1) Deploy mock underlying: nLSK
         // (you can mint to deployer inside MockERC20 constructor or via mint() later)
-        MockERC20 nLSK = new MockERC20("nLSK", "nLSK", 18);
+        MockERC20 nLSK = new MockERC20();
 
         // 2) Deploy implementation (UUPS)
         BaseVaultUpgradeable impl = new BaseVaultUpgradeable();
